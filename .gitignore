@@ -1,52 +1,187 @@
-# Prerequisites
-*.d
+#define PORTA    (*(volatile unsigned char *)0x3B)
+#define DDRA     (*(volatile unsigned char *)0x3A)
+#define PINA     (*(volatile unsigned char *)0x39)
 
-# Object files
-*.o
-*.ko
-*.obj
-*.elf
+#define PORTB    (*(volatile unsigned char *)0x38)
+#define DDRB     (*(volatile unsigned char *)0x37)
+#define PINB     (*(volatile unsigned char *)0x36)
 
-# Linker output
-*.ilk
-*.map
-*.exp
+#define PORTC    (*(volatile unsigned char *)0x35)
+#define DDRC     (*(volatile unsigned char *)0x34)
+#define PINC     (*(volatile unsigned char *)0x33)
 
-# Precompiled Headers
-*.gch
-*.pch
+#define PORTD    (*(volatile unsigned char *)0x32)
+#define DDRD     (*(volatile unsigned char *)0x31)
+#define PIND     (*(volatile unsigned char *)0x30)
 
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
+#define F_CPU   8000000
+#include <util/delay.h>
 
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
+#define READ_BIT(reg,bit)    ((reg>>bit)&1)
+#define SET_BIT(reg,bit)     (reg=reg|(1<<bit))
+#define CLR_BIT(reg,bit)     (reg=reg&(~(1<<bit)))
+#define TOG_BIT(reg,bit)     (reg=reg^(~(1<<bit)))
 
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
+void segment_display(char num)
+{
+	char segment_array[10]= {0x3F,0x06,0x5B,0x4F,0x66,0x6D,0x7D,0x07,0x7F,0x6f};
+	char d0,d1;
+	d0=num % 10;
+	d1=num/10;
+	SET_BIT(PORTC,6);
+	PORTA=segment_array[d0]<<1;
+	CLR_BIT(PORTC,7);
+	_delay_ms(1);
+	SET_BIT(PORTC,7);
+	PORTA=segment_array[d1]<<1;
+	CLR_BIT(PORTC,6);
+	_delay_ms(1);
+}
 
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
+typedef enum
+{
+	START_MODE=0,
+	STOP_MODE
+} START_STOP;
 
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
+typedef enum
+{
+	RUN_MODE=0,
+	CONF_MODE,
+} MODE_TYPE;
+
+typedef enum
+{
+	BUZZER_ON=0,
+	BUZZER_OFF
+} BUZZER_STATE;
+
+int main(void)
+{
+	DDRA=0XFF;
+	DDRB=0x00;
+	DDRC=0XFF;
+	DDRD=0X00;
+	PORTB=0XFF;
+	PORTD=0xff;
+	SET_BIT(PORTC,6);
+	SET_BIT(PORTC,7);
+
+	unsigned char y=0,timer=0;
+	START_STOP flag=STOP_MODE;
+	MODE_TYPE mode=CONF_MODE;
+	BUZZER_STATE buzzer=BUZZER_OFF;
+	unsigned short i;
+
+	while (1)
+	{
+		if(buzzer==BUZZER_ON)
+		{
+			
+			if(  (!READ_BIT(PIND,2))  ||  (!READ_BIT(PIND,3))  ||  (!READ_BIT(PIND,4))  )
+			{
+				buzzer=BUZZER_OFF;
+			}
+		}
+		
+		segment_display(y);
+		
+		if(flag==STOP_MODE)
+		{
+			segment_display(y);
+		}
+
+		// Configuration
+		
+		if(!READ_BIT(PIND,4) && (mode==CONF_MODE) && (buzzer==BUZZER_OFF) ) // switch from conf. mode to run mode
+		{
+			while(!READ_BIT(PIND,4));
+			mode=RUN_MODE;
+		}
+		
+		if(!READ_BIT(PIND,4) && (flag==STOP_MODE) && (buzzer==BUZZER_OFF)) // switch from conf. mode to run mode
+		{
+			while(!READ_BIT(PIND,4) );
+			mode=CONF_MODE;
+		}
+
+		if(mode==CONF_MODE && (buzzer==BUZZER_OFF) )
+		{
+			while(!READ_BIT(PIND,2)) // increment while stop mode
+			{
+				segment_display(y);
+				_delay_ms(300);
+				y++;
+				if(y>99)
+				{
+					y=0;
+				}
+				timer = y;
+			}
+
+			while(!READ_BIT(PIND,3)) // decrement while stop mode
+			{
+				segment_display(y);
+				_delay_ms(300);
+				y--;
+				if(y==255)
+				{
+					y=99;
+				}
+				timer = y;
+			}
+		}
+		
+		if ( (flag==STOP_MODE) && (mode==RUN_MODE) && (buzzer==BUZZER_OFF) )
+		{
+			if (!READ_BIT(PIND,2))
+			{
+				while(!READ_BIT(PIND,2));
+				flag=START_MODE;
+			}
+		}
+		
+		if ( flag==START_MODE && (buzzer==BUZZER_OFF) )
+		{
+			for(i=0 ; i<500 ; i++)
+			{
+				segment_display(y);
+				
+				if(!READ_BIT(PIND,2))  // stop
+				{
+					while(!READ_BIT(PIND,2));
+					flag=STOP_MODE;
+					y++;
+					break;
+				}
+			}
+
+			y--;
+				
+			if(y==0)
+			{
+				flag=STOP_MODE;
+				buzzer=BUZZER_ON;
+				SET_BIT(PORTC,5);
+				
+				for(i=0;i<2000;i++)
+				{
+					segment_display(y);
+				}
+				y=timer;
+			}
+				
+			else
+			{
+				CLR_BIT(PORTC,5);
+			}
+		}
+		
+		if(!READ_BIT(PIND,3) && (flag==STOP_MODE))  // reset
+		{
+			y=timer;
+		}
+		
+		
+	}			
+}
